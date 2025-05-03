@@ -6,6 +6,7 @@ import { generateToken } from "../utils/generateToken.js";
 export const registerUser = async (req, res) => {
   try {
     const { name, email, password } = req.body;
+    console.log("Register request received:", req.body); // Debugging line
 
     // Validate input
     if (!name || !email || !password) {
@@ -52,6 +53,7 @@ export const registerUser = async (req, res) => {
 };
 
 export const loginUser = async (req, res) => {
+  console.log("Login request received:", req.body); // Debugging line
   try {
     const { email, password } = req.body;
 
