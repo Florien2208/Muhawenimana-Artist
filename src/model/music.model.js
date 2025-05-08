@@ -4,7 +4,7 @@ const musicSchema = new mongoose.Schema(
   {
     title: {
       type: String,
-      required: [true, "Title is required"],
+      required: [true, "Music title is required"],
       trim: true,
     },
     description: {
@@ -24,6 +24,10 @@ const musicSchema = new mongoose.Schema(
       ref: "User",
       required: true,
     },
+    genre: {
+      type: String,
+      trim: true,
+    },
     status: {
       type: String,
       enum: ["draft", "published"],
@@ -32,13 +36,6 @@ const musicSchema = new mongoose.Schema(
     publishedAt: {
       type: Date,
       default: null,
-    },
-    genre: {
-      type: String,
-      trim: true,
-    },
-    duration: {
-      type: Number, // in seconds
     },
     plays: {
       type: Number,
@@ -51,10 +48,12 @@ const musicSchema = new mongoose.Schema(
       },
     ],
   },
-  { timestamps: true }
+  {
+    timestamps: true,
+  }
 );
 
-// Creating indexes for better search performance
+// Add text index for search functionality
 musicSchema.index({ title: "text", description: "text" });
 
 export const Music = mongoose.model("Music", musicSchema);

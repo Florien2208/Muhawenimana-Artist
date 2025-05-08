@@ -2,170 +2,98 @@ import multer from "multer";
 import path from "path";
 import fs from "fs";
 
-// Create directories if they don't exist
-const createDir = (dirPath) => {
-  if (!fs.existsSync(dirPath)) {
-    fs.mkdirSync(dirPath, { recursive: true });
+// Ensure upload directories exist
+const createDirs = () => {
+  const audioDir = path.join(process.cwd(), "uploads/audio");
+  const imageDir = path.join(process.cwd(), "uploads/images");
+
+  if (!fs.existsSync(audioDir)) {
+    fs.mkdirSync(audioDir, { recursive: true });
+  }
+
+  if (!fs.existsSync(imageDir)) {
+    fs.mkdirSync(imageDir, { recursive: true });
   }
 };
 
-// Create required directories
-const audioUploadDir = path.join(process.cwd(), "uploads/audio");
-const imageUploadDir = path.join(process.cwd(), "uploads/images");
-createDir(audioUploadDir);
-createDir(imageUploadDir);
+createDirs();
 
-// Audio file storage configuration
+// Configure storage for audio files
 const audioStorage = multer.diskStorage({
   destination: (req, file, cb) => {
-    cb(null, audioUploadDir);
+    if (file.fieldname === "audio_file") {
+      cb(null, path.join(process.cwd(), "uploads/audio"));
+    } else if (file.fieldname === "cover_image") {
+      cb(null, path.join(process.cwd(), "uploads/images"));
+    }
   },
   filename: (req, file, cb) => {
     const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
     const ext = path.extname(file.originalname);
-    cb(null, `music-${uniqueSuffix}${ext}`);
+    const prefix = file.fieldname === "audio_file" ? "audio" : "image";
+    cb(null, `${prefix}-${uniqueSuffix}${ext}`);
   },
 });
 
-// Image file storage configuration
-const imageStorage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, imageUploadDir);
-  },
-  filename: (req, file, cb) => {
-    const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
-    const ext = path.extname(file.originalname);
-    cb(null, `image-${uniqueSuffix}${ext}`);
-  },
-});
+// File filter function
+const fileFilter = (req, file, cb) => {
+  if (file.fieldname === "audio_file") {
+    // Audio file filter
+    const allowedTypes = [
+      "audio/mpeg",
+      "audio/mp3",
+      "audio/wav",
+      "audio/ogg",
+      "audio/x-m4a",
+    ];
 
-// File filter for audio files
-const audioFilter = (req, file, cb) => {
-  const allowedTypes = [
-    "audio/mpeg",
-    "audio/mp3",
-    "audio/wav",
-    "audio/ogg",
-    "audio/flac",
-    "audio/aac",
-  ];
+    if (allowedTypes.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(
+        new Error(
+          "Invalid audio file format. Supported formats: MP3, WAV, OGG, M4A"
+        )
+      );
+    }
+  } else if (file.fieldname === "cover_image") {
+    // Image file filter
+    const allowedTypes = ["image/jpeg", "image/jpg", "image/png", "image/webp"];
 
-  if (allowedTypes.includes(file.mimetype)) {
-    cb(null, true);
+    if (allowedTypes.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error("Invalid image format. Supported formats: JPG, PNG, WEBP"));
+    }
   } else {
-    cb(
-      new Error(
-        "Invalid audio file type. Only MP3, WAV, OGG, FLAC, and AAC are allowed."
-      ),
-      false
-    );
+    cb(new Error("Unexpected field"));
   }
 };
 
-// File filter for image files
-const imageFilter = (req, file, cb) => {
-  const allowedTypes = ["image/jpeg", "image/jpg", "image/png", "image/webp"];
-
-  if (allowedTypes.includes(file.mimetype)) {
-    cb(null, true);
-  } else {
-    cb(
-      new Error(
-        "Invalid image file type. Only JPG, PNG, and WebP are allowed."
-      ),
-      false
-    );
-  }
-};
-
-// Set up Multer for audio files
-const audioUpload = multer({
+// Set up multer for music files
+const upload = multer({
   storage: audioStorage,
-  fileFilter: audioFilter,
-  limits: { fileSize: 20 * 1024 * 1024 }, // 20MB max size
+  fileFilter: fileFilter,
+  limits: {
+    fileSize: 20 * 1024 * 1024, // 20MB limit for audio files
+  },
 });
 
-// Set up Multer for image files
-const imageUpload = multer({
-  storage: imageStorage,
-  fileFilter: imageFilter,
-  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB max size
-});
-
-// Middleware to handle file uploads
+// Middleware to handle file uploads for music
 export const uploadMusicFiles = (req, res, next) => {
-  const upload = multer().fields([
-    { name: "audioFile", maxCount: 1 },
-    { name: "backgroundImage", maxCount: 1 },
+  const uploadFields = upload.fields([
+    { name: "audio_file", maxCount: 1 },
+    { name: "cover_image", maxCount: 1 },
   ]);
 
-  upload(req, res, async (err) => {
-    if (err instanceof multer.MulterError) {
-      // A Multer error occurred when uploading
-      return res.status(400).json({ message: `Upload error: ${err.message}` });
-    } else if (err) {
-      // An unknown error occurred
-      return res.status(500).json({ message: `Server error: ${err.message}` });
+  uploadFields(req, res, (err) => {
+    if (err) {
+      return res.status(400).json({ message: err.message });
     }
 
-    try {
-      // Process audio file if uploaded
-      if (req.files.audioFile) {
-        const audioFile = req.files.audioFile[0];
-        const result = await processAudioFile(audioFile);
-        req.files.audioFile[0] = result;
-      }
+    // Log the uploaded files for debugging
+    console.log("Uploaded files:", req.files);
 
-      // Process image file if uploaded
-      if (req.files.backgroundImage) {
-        const imageFile = req.files.backgroundImage[0];
-        const result = await processImageFile(imageFile);
-        req.files.backgroundImage[0] = result;
-      }
-
-      next();
-    } catch (error) {
-      return res
-        .status(500)
-        .json({ message: `File processing error: ${error.message}` });
-    }
+    next();
   });
-};
-
-// Process audio file (save to disk with proper validation)
-const processAudioFile = async (file) => {
-  if (!audioFilter({}, file, () => {})) {
-    throw new Error("Invalid audio file type");
-  }
-
-  const filename = `music-${Date.now()}-${Math.round(
-    Math.random() * 1e9
-  )}${path.extname(file.originalname)}`;
-  const filePath = path.join(audioUploadDir, filename);
-
-  await fs.promises.writeFile(filePath, file.buffer);
-
-  return {
-    ...file,
-    filename: filename,
-  };
-};
-
-// Process image file (save to disk with proper validation)
-const processImageFile = async (file) => {
-  if (!imageFilter({}, file, () => {})) {
-    throw new Error("Invalid image file type");
-  }
-
-  const filename = `image-${Date.now()}-${Math.round(
-    Math.random() * 1e9
-  )}${path.extname(file.originalname)}`;
-  const filePath = path.join(imageUploadDir, filename);
-
-  await fs.promises.writeFile(filePath, file.buffer);
-
-  return {
-    ...file,
-    filename: filename,
-  };
 };

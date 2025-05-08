@@ -53,10 +53,10 @@ export const registerUser = async (req, res) => {
 };
 
 export const loginUser = async (req, res) => {
-  console.log("Login request received:", req.body); // Debugging line
+ // Debugging line
   try {
     const { email, password } = req.body;
-
+ console.log("Login request received:", req.body); 
     // Validate input
     if (!email || !password) {
       return res

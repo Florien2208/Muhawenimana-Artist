@@ -3,16 +3,18 @@ import path from "path";
 import fs from "fs";
 
 /**
- * @desc    Create a new music entry (draft by default)
- * @route   POST /api/music
+ * @desc    Create a new music entry
+ * @route   POST /api/v1/music
  * @access  Private
  */
 export const createMusic = async (req, res) => {
   try {
-    const { title, description, genre } = req.body;
-    const audioFile = req.files?.audioFile?.[0]?.filename;
-    const backgroundImage = req.files?.backgroundImage?.[0]?.filename;
-
+    console.log("checked");
+    const { title, description, genre, is_public } = req.body;
+    const audioFile = req.files?.audio_file?.[0]?.filename;
+    const backgroundImage = req.files?.cover_image?.[0]?.filename;
+    // console.log(req.files);
+    //     console.log(req.body);
     // Validate input
     if (!title || !audioFile) {
       // Remove uploaded files if validation fails
@@ -29,6 +31,11 @@ export const createMusic = async (req, res) => {
         .json({ message: "Title and audio file are required" });
     }
 
+    // Set status based on is_public flag
+    const status =
+      is_public === "true" || is_public === true ? "published" : "draft";
+    const publishedAt = status === "published" ? new Date() : null;
+
     // Create music entry
     const newMusic = await Music.create({
       title,
@@ -37,13 +44,24 @@ export const createMusic = async (req, res) => {
       backgroundImage: backgroundImage || undefined,
       user: req.user.id,
       genre,
-      // Status defaults to "draft" from schema
+      status,
+      publishedAt,
     });
 
-    res.status(201).json({
-      message: "Music saved as draft",
-      music: newMusic,
-    });
+    // Format response to match frontend expectations
+    const formattedMusic = {
+      id: newMusic._id,
+      title: newMusic.title,
+      description: newMusic.description,
+      backgroundImage: newMusic.backgroundImage,
+      status: newMusic.status,
+      is_public: newMusic.status === "published",
+      createdAt: newMusic.createdAt,
+      play_count: 0,
+      like_count: 0,
+    };
+
+    res.status(201).json(formattedMusic);
   } catch (error) {
     console.error(`Error in createMusic: ${error.message}`);
     res.status(500).json({ message: "Server error", error: error.message });
@@ -52,7 +70,7 @@ export const createMusic = async (req, res) => {
 
 /**
  * @desc    Get all published music
- * @route   GET /api/music
+ * @route   GET /api/v1/music
  * @access  Public
  */
 export const getPublishedMusic = async (req, res) => {
@@ -80,14 +98,22 @@ export const getPublishedMusic = async (req, res) => {
       .skip(skip)
       .limit(limit);
 
+    // Format response to match frontend expectations
+    const formattedMusic = music.map((track) => ({
+      _id: track._id,
+      title: track.title,
+      description: track.description,
+      backgroundImage: track.backgroundImage,
+      play_count: track.plays,
+      like_count: track.likes.length,
+      is_public: track.status === "published",
+      createdAt: track.createdAt,
+      user: track.user,
+    }));
+
     const total = await Music.countDocuments(query);
 
-    res.status(200).json({
-      music,
-      page,
-      pages: Math.ceil(total / limit),
-      total,
-    });
+    res.status(200).json(formattedMusic);
   } catch (error) {
     console.error(`Error in getPublishedMusic: ${error.message}`);
     res.status(500).json({ message: "Server error", error: error.message });
@@ -96,7 +122,7 @@ export const getPublishedMusic = async (req, res) => {
 
 /**
  * @desc    Get music by ID
- * @route   GET /api/music/:id
+ * @route   GET /api/v1/music/:id
  * @access  Public for published, Private for draft (owner only)
  */
 export const getMusicById = async (req, res) => {
@@ -126,7 +152,25 @@ export const getMusicById = async (req, res) => {
       await music.save();
     }
 
-    res.status(200).json(music);
+    // Format response to match frontend expectations
+    const formattedMusic = {
+      _id: music._id,
+      title: music.title,
+      description: music.description,
+      audioFile: music.audioFile,
+      backgroundImage: music.backgroundImage,
+      user: music.user,
+      status: music.status,
+      is_public: music.status === "published",
+      createdAt: music.createdAt,
+      publishedAt: music.publishedAt,
+      genre: music.genre,
+      play_count: music.plays,
+      like_count: music.likes.length,
+      likes: music.likes,
+    };
+
+    res.status(200).json(formattedMusic);
   } catch (error) {
     console.error(`Error in getMusicById: ${error.message}`);
 
@@ -140,7 +184,7 @@ export const getMusicById = async (req, res) => {
 
 /**
  * @desc    Get all music by current user (drafts and published)
- * @route   GET /api/music/mymusic
+ * @route   GET /api/v1/music/user/mymusic
  * @access  Private
  */
 export const getMyMusic = async (req, res) => {
@@ -155,7 +199,20 @@ export const getMyMusic = async (req, res) => {
 
     const music = await Music.find(query).sort({ createdAt: -1 });
 
-    res.status(200).json(music);
+    // Format response to match frontend expectations
+    const formattedMusic = music.map((track) => ({
+      _id: track._id,
+      title: track.title,
+      description: track.description,
+      backgroundImage: track.backgroundImage,
+      play_count: track.plays,
+      like_count: track.likes.length,
+      is_public: track.status === "published",
+      createdAt: track.createdAt,
+      status: track.status,
+    }));
+
+    res.status(200).json(formattedMusic);
   } catch (error) {
     console.error(`Error in getMyMusic: ${error.message}`);
     res.status(500).json({ message: "Server error", error: error.message });
@@ -164,7 +221,7 @@ export const getMyMusic = async (req, res) => {
 
 /**
  * @desc    Update music
- * @route   PUT /api/music/:id
+ * @route   PUT /api/v1/music/:id
  * @access  Private (owner or admin)
  */
 export const updateMusic = async (req, res) => {
@@ -180,19 +237,26 @@ export const updateMusic = async (req, res) => {
       return res.status(403).json({ message: "Not authorized" });
     }
 
-    const { title, description, genre, status } = req.body;
-    const audioFile = req.files?.audioFile?.[0]?.filename;
-    const backgroundImage = req.files?.backgroundImage?.[0]?.filename;
+    const { title, description, genre, is_public } = req.body;
+    const audioFile = req.files?.audio_file?.[0]?.filename;
+    const backgroundImage = req.files?.cover_image?.[0]?.filename;
 
     // Update fields if provided
-    music.title = title || music.title;
-    music.description = description || music.description;
-    music.genre = genre || music.genre;
+    if (title) music.title = title;
+    if (description) music.description = description;
+    if (genre) music.genre = genre;
 
-    // Handle status change from draft to published
-    if (status && status === "published" && music.status === "draft") {
-      music.status = "published";
-      music.publishedAt = new Date();
+    // Handle status change if is_public flag is provided
+    if (is_public !== undefined) {
+      const newStatus =
+        is_public === "true" || is_public === true ? "published" : "draft";
+
+      // If changing from draft to published, update publishedAt
+      if (newStatus === "published" && music.status === "draft") {
+        music.publishedAt = new Date();
+      }
+
+      music.status = newStatus;
     }
 
     // Handle audio file update
@@ -232,10 +296,20 @@ export const updateMusic = async (req, res) => {
 
     const updatedMusic = await music.save();
 
-    res.status(200).json({
-      message: "Music updated successfully",
-      music: updatedMusic,
-    });
+    // Format response to match frontend expectations
+    const formattedMusic = {
+      _id: updatedMusic._id,
+      title: updatedMusic.title,
+      description: updatedMusic.description,
+      backgroundImage: updatedMusic.backgroundImage,
+      status: updatedMusic.status,
+      is_public: updatedMusic.status === "published",
+      createdAt: updatedMusic.createdAt,
+      play_count: updatedMusic.plays,
+      like_count: updatedMusic.likes.length,
+    };
+
+    res.status(200).json(formattedMusic);
   } catch (error) {
     console.error(`Error in updateMusic: ${error.message}`);
 
@@ -249,7 +323,7 @@ export const updateMusic = async (req, res) => {
 
 /**
  * @desc    Publish music (change status from draft to published)
- * @route   PUT /api/music/:id/publish
+ * @route   PUT /api/v1/music/:id/publish
  * @access  Private (owner or admin)
  */
 export const publishMusic = async (req, res) => {
@@ -276,10 +350,20 @@ export const publishMusic = async (req, res) => {
 
     const publishedMusic = await music.save();
 
-    res.status(200).json({
-      message: "Music published successfully",
-      music: publishedMusic,
-    });
+    // Format response to match frontend expectations
+    const formattedMusic = {
+      _id: publishedMusic._id,
+      title: publishedMusic.title,
+      description: publishedMusic.description,
+      backgroundImage: publishedMusic.backgroundImage,
+      status: publishedMusic.status,
+      is_public: true,
+      createdAt: publishedMusic.createdAt,
+      play_count: publishedMusic.plays,
+      like_count: publishedMusic.likes.length,
+    };
+
+    res.status(200).json(formattedMusic);
   } catch (error) {
     console.error(`Error in publishMusic: ${error.message}`);
 
@@ -293,7 +377,7 @@ export const publishMusic = async (req, res) => {
 
 /**
  * @desc    Delete music
- * @route   DELETE /api/music/:id
+ * @route   DELETE /api/v1/music/:id
  * @access  Private (owner or admin)
  */
 export const deleteMusic = async (req, res) => {
@@ -351,7 +435,7 @@ export const deleteMusic = async (req, res) => {
 
 /**
  * @desc    Like or unlike music
- * @route   PUT /api/music/:id/like
+ * @route   PUT /api/v1/music/:id/like
  * @access  Private
  */
 export const toggleLike = async (req, res) => {
@@ -384,7 +468,7 @@ export const toggleLike = async (req, res) => {
 
     res.status(200).json({
       message: isLiked ? "Music unliked" : "Music liked",
-      likes: music.likes.length,
+      like_count: music.likes.length,
     });
   } catch (error) {
     console.error(`Error in toggleLike: ${error.message}`);
@@ -399,7 +483,7 @@ export const toggleLike = async (req, res) => {
 
 /**
  * @desc    Get all music (admin access)
- * @route   GET /api/music/admin
+ * @route   GET /api/v1/music/admin
  * @access  Private/Admin
  */
 export const getAllMusic = async (req, res) => {
@@ -429,10 +513,23 @@ export const getAllMusic = async (req, res) => {
       .skip(skip)
       .limit(limit);
 
+    // Format response to match frontend expectations
+    const formattedMusic = music.map((track) => ({
+      _id: track._id,
+      title: track.title,
+      description: track.description,
+      backgroundImage: track.backgroundImage,
+      play_count: track.plays,
+      like_count: track.likes.length,
+      is_public: track.status === "published",
+      createdAt: track.createdAt,
+      user: track.user,
+    }));
+
     const total = await Music.countDocuments(query);
 
     res.status(200).json({
-      music,
+      music: formattedMusic,
       page,
       pages: Math.ceil(total / limit),
       total,

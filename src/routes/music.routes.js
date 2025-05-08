@@ -21,11 +21,8 @@ MusicRouter.get("/:id", getMusicById);
 
 // Protected routes
 MusicRouter.post("/", protect, uploadMusicFiles, createMusic);
-
 MusicRouter.get("/user/mymusic", protect, getMyMusic);
-
 MusicRouter.put("/:id", protect, uploadMusicFiles, updateMusic);
-
 MusicRouter.put("/:id/publish", protect, publishMusic);
 MusicRouter.delete("/:id", protect, deleteMusic);
 MusicRouter.put("/:id/like", protect, toggleLike);
